@@ -1,0 +1,18 @@
+[
+    {
+      "input": "Je veux un billet pour Paris demain",
+      "output": "book_ticket"
+    },
+    {
+      "input": "Quand part le prochain TGV pour Lyon ?",
+      "output": "train_schedule"
+    },
+    {
+      "input": "Est-ce qu'il y a des trains pour Bordeaux ?",
+      "output": "train_schedule"
+    },
+    {
+      "input": "Réserve un billet pour Marseille demain soir",
+      "output": "book_ticket"
+    }
+  ]  

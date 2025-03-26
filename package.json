@@ -1,0 +1,18 @@
+{
+  "name": "sncf_nlu",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "knex": "^3.1.0",
+    "limdu": "^1.0.0",
+    "readline-sync": "^1.4.10",
+    "sqlite3": "^5.1.7"
+  }
+}
