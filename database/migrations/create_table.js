@@ -3,6 +3,9 @@ exports.up = function(knex) {
       .createTable('Usagers', table => {
         table.increments('id');
         table.string('nom');
+        table.string('prenom');
+        table.string('email');
+        table.string('password');
       })
       .createTable('Stations', table => {
         table.increments('id');
@@ -11,11 +14,11 @@ exports.up = function(knex) {
       .createTable('Lignes', table => {
         table.increments('id');
         table.string('nom');
-
+        table.string('company'); // INOUI OUIGO ETC.
+        table.string('stations').references('nom').inTable('Stations');
       })
       .createTable('Trains', table => {
         table.increments('id');
-        table.string('type');
         table.string('number');
         table.integer('ligne_id').references('id').inTable('Lignes');
         table.string('depart');
@@ -25,8 +28,8 @@ exports.up = function(knex) {
       .createTable('Horaires', table => {
         table.increments('id');
         table.integer('train_id').references('id').inTable('Trains');
-        table.string('heure_depart');
-        table.string('heure_arrivee');
+        table.integer('heure_depart');
+        table.integer('heure_arrivee');
       })
       .createTable('Billets', table => {
         table.increments('id');
@@ -46,4 +49,3 @@ exports.up = function(knex) {
       .dropTableIfExists('Stations')
       .dropTableIfExists('Usagers');
   };
-  
