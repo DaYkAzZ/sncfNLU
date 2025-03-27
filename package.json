@@ -10,6 +10,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bcrypt": "^5.1.1",
+    "jsonwebtoken": "^9.0.2",
     "knex": "^3.1.0",
     "limdu": "^1.0.0",
     "readline-sync": "^1.4.10",
