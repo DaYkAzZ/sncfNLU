@@ -11,9 +11,12 @@
   "license": "ISC",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "compromise": "^14.14.4",
+    "fuzzysort": "^3.1.0",
     "jsonwebtoken": "^9.0.2",
     "knex": "^3.1.0",
     "limdu": "^1.0.0",
+    "natural": "^8.0.1",
     "readline-sync": "^1.4.10",
     "sqlite3": "^5.1.7"
   }

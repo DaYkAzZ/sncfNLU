@@ -1,147 +1,259 @@
-const knex = require('./db');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const readline = require('readline-sync');
+const path = require("path");
+const knex = require("knex")({
+  client: "sqlite3",
+  connection: {
+    filename: path.resolve(__dirname, "..", "database", "sncf.db"),
+  },
+  useNullAsDefault: true,
+});
 
-const SECRET_KEY = "secret123"; // 🔥 À sécuriser avec dotenv
+const readline = require("readline");
+const fuzzyMatch = require("fuzzysort");
 
-let currentUser = null;
+class TrainNLU {
+  constructor() {
+    this.rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt:
+        '🚆 Votre requête (tapez "aide" pour de l\'aide, "quitter" pour sortir) : ',
+    });
 
-// 🔹 Fonction d'inscription
-async function register() {
-    const nom = readline.question("Nom : ");
-    const prenom = readline.question("Prénom : ");
-    const email = readline.question("Email : ");
-    const password = readline.question("Mot de passe : ", { hideEchoBack: true });
+    this.stationsCache = null;
+  }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+  async loadStations() {
+    if (this.stationsCache) return this.stationsCache;
 
     try {
-        await knex('Usagers').insert({ nom, prenom, email, password: hashedPassword });
-        console.log('✅ Inscription réussie !');
+      // Utilisez des requêtes plus flexibles
+      const stations = await knex.select("*").from("stations");
+      this.stationsCache = stations.map((station) => station.nom.toLowerCase());
+      return this.stationsCache;
     } catch (error) {
-        console.error('❌ Erreur lors de l\'inscription. Cet email est peut-être déjà utilisé.');
+      console.error("Erreur de chargement des stations:", error);
+      return [];
     }
-}
+  }
 
-// 🔹 Fonction de connexion
-async function login() {
-    const email = readline.question("Email : ");
-    const password = readline.question("Mot de passe : ", { hideEchoBack: true });
+  normalize(text) {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s]/gi, "");
+  }
 
-    const user = await knex('Usagers').where({ email }).first();
+  async extractStations(text) {
+    const stations = await this.loadStations();
+    const normalizedText = this.normalize(text);
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-        return console.log("❌ Identifiants incorrects.");
+    const exactMatches = stations.filter((station) =>
+      normalizedText.includes(this.normalize(station))
+    );
+
+    if (exactMatches.length === 0) {
+      const matches = fuzzyMatch.go(normalizedText, stations, {
+        limit: 2,
+        threshold: -500,
+      });
+      return matches.map((match) => match.target);
     }
 
-    const token = jwt.sign({ id: user.id }, SECRET_KEY, { expiresIn: '1h' });
-    currentUser = { id: user.id, email, token };
-    console.log(`✅ Connecté en tant que ${email}`);
-}
+    return exactMatches;
+  }
 
-// 🔹 Afficher les trains disponibles
-async function listTrains() {
-    const trains = await knex('Trains')
-        .join('Lignes', 'Trains.ligne_id', '=', 'Lignes.id')
-        .select('Trains.id', 'Trains.number', 'Trains.depart', 'Trains.arrivee', 'Trains.seats', 'Lignes.nom as ligne');
+  detectIntention(text) {
+    const normalizedText = this.normalize(text);
 
-    if (trains.length === 0) {
-        return console.log("🚆 Aucun train disponible.");
-    }
+    const intentions = {
+      reservation: [
+        "reserver",
+        "acheter",
+        "prendre",
+        "obtenir",
+        "commander",
+        "vouloir",
+        "cherche",
+        "aimerais",
+        "souhaite",
+        "billet",
+      ],
+      horaires: [
+        "horaire",
+        "heure",
+        "quand",
+        "depart",
+        "arrivee",
+        "planning",
+        "temps",
+        "programme",
+        "train",
+      ],
+      informations: ["information", "renseignement", "details", "infos"],
+    };
 
-    console.log("\n📋 Liste des trains :");
-    trains.forEach(train => {
-        console.log(`🛤️ Train ${train.id} (${train.number}) - ${train.ligne} : ${train.depart} → ${train.arrivee} (${train.seats} places)`);
-    });
-}
-
-// 🔹 Réserver un billet
-async function reserveTicket() {
-    if (!currentUser) return console.log("⚠️ Vous devez être connecté.");
-
-    await listTrains();
-    const trainId = readline.questionInt("ID du train à réserver : ");
-    const seat = readline.questionInt("Numéro de siège : ");
-    const prix = readline.question("Prix du billet : ");
-
-    try {
-        await knex('Billets').insert({
-            usager_id: currentUser.id,
-            train_id: trainId,
-            seat,
-            prix
-        });
-        console.log("🎟️ Billet réservé !");
-    } catch (error) {
-        console.error("❌ Erreur lors de la réservation.");
-    }
-}
-
-// 🔹 Voir les réservations de l'utilisateur
-async function listReservations() {
-    if (!currentUser) return console.log("⚠️ Vous devez être connecté.");
-
-    const reservations = await knex('Billets')
-        .join('Trains', 'Billets.train_id', '=', 'Trains.id')
-        .select('Trains.number', 'Trains.depart', 'Trains.arrivee', 'Billets.seat', 'Billets.prix')
-        .where('Billets.usager_id', currentUser.id);
-
-    if (reservations.length === 0) return console.log("📭 Aucune réservation.");
-
-    console.log("\n🎟️ Vos réservations :");
-    reservations.forEach(r => {
-        console.log(`🚆 Train ${r.number} : ${r.depart} → ${r.arrivee} | Siège : ${r.seat} | Prix : ${r.prix}€`);
-    });
-}
-
-async function myProfile() {
-  if (!currentUser) return console.log("⚠️ Vous devez être connecté pour consulter votre profil. Tapez 2️⃣ pour vous connecter ou 1️⃣ pour vous inscrire.");
-  const user = await knex('Usagers').where({ id: currentUser.id }).first();
-  console.log(`=========================\n🚹 Bienvenue sur votre profil ${user.prenom} \nNom : ${user.nom}\nPrenom : ${user.prenom}\nEmail : ${user.email}\n=========================`);
-  
-}
-
-// 🔹 Menu CLI
-async function mainMenu() {
-    while (true) {
-        console.log("\n=== MENU ===");
-        console.log("1️⃣ Inscription");
-        console.log("2️⃣ Connexion");
-        console.log("3️⃣ Afficher les trains");
-        console.log("4️⃣ Réserver un billet");
-        console.log("5️⃣ Mes réservations");
-        console.log("6️⃣ Afficher mon profil");
-        console.log("7️⃣ Quitter");
-
-        const choix = readline.questionInt("Votre choix : ");
-
-        switch (choix) {
-            case 1:
-                await register();
-                break;
-            case 2:
-                await login();
-                break;
-            case 3:
-                await listTrains();
-                break;
-            case 4:
-                await reserveTicket();
-                break;
-            case 5:
-                await listReservations();
-                break;
-            case 6:
-                await myProfile();
-                break;
-            case 7:
-                console.log("👋 Au revoir !");
-                process.exit(0);
-            default:
-                console.log("⚠️ Choix invalide !");
+    for (const [intention, patterns] of Object.entries(intentions)) {
+      for (const pattern of patterns) {
+        if (normalizedText.includes(pattern)) {
+          return intention;
         }
+      }
     }
+
+    return "inconnu";
+  }
+
+  async processRequest(text) {
+    if (text.toLowerCase() === "aide") {
+      return this.showHelp();
+    }
+
+    const stations = await this.extractStations(text);
+    const intention = this.detectIntention(text);
+
+    switch (intention) {
+      case "reservation":
+        return await this.handleReservation(stations);
+      case "horaires":
+        return await this.handleHoraires(stations);
+      case "informations":
+        return await this.handleInformations(stations);
+      default:
+        return "Je n'ai pas compris votre requête. Tapez 'aide' pour obtenir de l'aide.";
+    }
+  }
+
+  async handleReservation(stations) {
+    if (stations.length < 2) {
+      return "Je n'ai pas trouvé les stations de départ et d'arrivée. Pouvez-vous préciser ?";
+    }
+
+    try {
+      // Requête plus flexible
+      const trains = await knex("trains")
+        .where("depart", "like", `%${stations[0]}%`)
+        .where("arrivee", "like", `%${stations[1]}%`)
+        .select("*");
+
+      if (trains.length === 0) {
+        return `Aucun train trouvé entre ${stations[0]} et ${stations[1]}`;
+      }
+
+      let message = `=================TABLEAU D'AFFICHAGE=================\n🏠 Bienvenue en gare de ${stations[0]}\n\n🚉 Voici les trains disponibles de ${stations[0]} à ${stations[1]} :\n`;
+      trains.forEach((train) => {
+        message += `| 🚆 Train ${train.number} | 💺 Places ${train.seats} |\n--------------------------------\n`;
+      });
+
+      return message;
+    } catch (error) {
+      console.error("Erreur lors de la recherche de trains :", error);
+      return "Une erreur est survenue lors de la recherche des trains.";
+    }
+  }
+
+  async handleHoraires(stations) {
+    if (stations.length < 2) {
+      return "Merci de préciser les stations pour lesquelles vous voulez les horaires.";
+    }
+
+    try {
+      // Jointure flexible
+      const horaires = await knex("horaires")
+        .join("trains", "horaires.train_id", "=", "trains.id")
+        .where("trains.depart", "like", `%${stations[0]}%`)
+        .where("trains.arrivee", "like", `%${stations[1]}%`)
+        .select("*");
+
+      if (horaires.length === 0) {
+        return `Aucun horaire trouvé entre ${stations[0]} et ${stations[1]}`;
+      }
+
+      let message = `Horaires de ${stations[0]} à ${stations[1]} :\n`;
+      horaires.forEach((horaire) => {
+        message += `- Train ${horaire.train_id} : Départ ${horaire.heure_depart}, Arrivée ${horaire.heure_arrivee}\n`;
+      });
+
+      return message;
+    } catch (error) {
+      console.error("Erreur lors de la recherche des horaires :", error);
+      return "Une erreur est survenue lors de la recherche des horaires.";
+    }
+  }
+
+  async handleInformations(stations) {
+    if (stations.length === 0) {
+      return "Merci de préciser la gare pour laquelle vous voulez des informations.";
+    }
+
+    try {
+      const gare = await knex("stations")
+        .where("nom", "like", `%${stations[0]}%`)
+        .first();
+
+      const trains = await knex("trains").select("*").where('depart', 'like', `%${stations[0]}%`);
+
+      if (!gare) {
+        return `Aucune information trouvée pour la gare ${stations[0]}`;
+      }
+      if (!trains) {
+        return `Aucun trains disponibles`;
+      } 
+        console.log(`Informations sur la gare ${gare.nom} : - ID de la gare : ${gare.id}`);
+        console.log(`Voici la listes de trains disponibles actuellement en gare de ${gare.nom} :\n✅ Trains numéro : ${trains.number} | Destination : ${trains.arrivee} | Nombres de places restantes : ${trains.seats}`);
+
+    } catch (error) {
+      console.error("Erreur lors de la recherche d'informations :", error);
+      return "Une erreur est survenue lors de la recherche des informations.";
+    }
+  }
+
+  showHelp() {
+    return `
+            🚉 Aide pour l'assistant de réservation SNCF 🚉
+              
+            Vous pouvez utiliser des requêtes en langage naturel comme :
+            - "Je veux réserver un billet de Paris à Lyon"
+            - "Quels sont les horaires entre Marseille et Lille ?"
+            - "Donne-moi des informations sur la gare de Paris"
+              
+            Exemples de commandes :
+            - 'aide' : Affiche cette aide
+            - 'quitter' : Quitte l'application
+        `;
+  }
+
+  start() {
+    console.log("🚆 Bienvenue dans l'assistant de réservation SNCF !");
+    console.log("Tapez 'aide' pour voir les instructions.");
+
+    this.rl.prompt();
+
+    this.rl
+      .on("line", async (line) => {
+        if (line.toLowerCase() === "quitter") {
+          console.log("Au revoir !");
+          this.rl.close();
+          return;
+        }
+
+        try {
+          const response = await this.processRequest(line);
+          console.log("\n" + response + "\n");
+        } catch (error) {
+          console.error("Erreur :", error);
+        }
+
+        this.rl.prompt();
+      })
+      .on("close", () => {
+        process.exit(0);
+      });
+  }
 }
 
-mainMenu();
+// Démarrage de l'assistant
+const trainNLU = new TrainNLU();
+trainNLU.start();
+
+module.exports = trainNLU;
