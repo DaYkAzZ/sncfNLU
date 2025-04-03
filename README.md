@@ -95,6 +95,4 @@ Le système de compréhension du langage naturel fonctionne en plusieurs étapes
 
 Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou une pull request.
 
-## 📄 Licence
 
-Ce projet est sous licence [MIT](LICENSE).
